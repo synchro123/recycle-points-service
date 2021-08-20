@@ -1,0 +1,24 @@
+﻿app_token - константа
+
+для получения данных в формате json в конце каждой ссылки добавить "&format=json"
+
+создать пользователя:
+api/create_user?app_token=%app token%&phone=%phone number%&first_name=%first name%&last_name=%last name%&patronymic=%patronymic%
+
+отправить СМС код на номер телефона
+api/init_authentication?app_token=%app token%&phone=%phone number%
+
+получить токен юзера по номеру телефона и смс коду (!!верный код вводить с первой попытки!!)
+api/authenticate_user?app_token=%app token%&phone=%phone number%&passcode=%sms code%
+
+инфа о юзере
+api/user_info?app_token=%app token%&token=%user token%
+
+инфа о мусоре юзера
+api/user_garbage_info?app_token=%app token%&token=%user token%
+
+добавить кол-во монет
+api/add_coins?app_token=%app token%&token=%user которому идут деньги token%&value=%кол-во для добавления%
+
+добавить мусор
+api/add_garbage/(cardboard/wastepaper/glass/plastic_lid/aluminium_can/plastic_bottle/plastic_mk2/plastic_mk5)?app_token=%app token%&token=%user которому идёт мусор token%&value=%кол-во для добавления%
