@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User
+from .models import User, Market, MarketItem, CollectionPlace
 
 # Register your models here.
 class UserAdmin(admin.ModelAdmin):
@@ -8,3 +8,7 @@ class UserAdmin(admin.ModelAdmin):
                     'garb_aluminum_can', 'garb_plastic_bottle', 'garb_plastic_mk2', 'garb_plastic_mk5']
 
 admin.site.register(User, UserAdmin)
+
+admin.site.register(Market)
+admin.site.register(MarketItem)
+admin.site.register(CollectionPlace)

@@ -26,9 +26,9 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, 'apps'))
 SECRET_KEY = 'a7pft=f!kp4bls$*oaxz4by9hd1-6%n@u64lx8w-ly0m!^y_gs'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
-ALLOWED_HOSTS = ['https://tochka-sbora.herokuapp.com']
+ALLOWED_HOSTS = []
 
 
 # Application definition

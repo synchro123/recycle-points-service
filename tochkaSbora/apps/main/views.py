@@ -2,40 +2,46 @@ from django.shortcuts import render
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 
-from .models import User, user_by_token
+from .models import User, user_by_token, CollectionPlace, Market, MarketItem
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import authentication, permissions
 
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import padding
-from cryptography.fernet import Fernet
+import json
+import base64
+import hashlib
+from Crypto.Cipher import AES
+from Crypto import Random
 
-APP_TOKEN = ''
+APP_TOKEN = 'PX6eUmgv4th7GKqhqDr8E5AZt8SFi2Ja'
+
+BLOCK_SIZE = 16
+
+ENCRYPT_PWD = 'pN4a4JZEWED9ZiKTx956piXhaqweiV85'
+
+def unpad(s):
+    return s[:-ord(s[len(s) - 1:])]
 
 
-def generate_keys():
-    """Генерирует приватный и публичный ключи"""
-    private_key = rsa.generate_private_key(
-        public_exponent=65537,
-        key_size=2048,
-        backend=default_backend()
-    )
-    public_key = private_key.public_key()
-    serial_private = private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption()
-    )
-    serial_pub = public_key.public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo
-    )
-    return serial_private, serial_pub
+def pad(s):
+    return s + (BLOCK_SIZE - len(s) % BLOCK_SIZE) * chr(BLOCK_SIZE - len(s) % BLOCK_SIZE)
+
+
+def decrypt(enc):
+    private_key = hashlib.sha256(ENCRYPT_PWD.encode("utf-8")).digest()
+    enc = base64.b64decode(enc)
+    iv = enc[:16]
+    cipher = AES.new(private_key, AES.MODE_CBC, iv)
+    return json.loads(unpad(cipher.decrypt(enc[16:])))
+
+
+def encrypt(raw):
+    private_key = hashlib.sha256(ENCRYPT_PWD.encode("utf-8")).digest()
+    raw = pad(raw)
+    iv = Random.new().read(AES.block_size)
+    cipher = AES.new(private_key, AES.MODE_CBC, iv)
+    return base64.b64encode(iv + cipher.encrypt(raw.encode("utf-8"))).decode(encoding="utf-8")
 
 
 class APIViewBase(APIView):
@@ -43,230 +49,288 @@ class APIViewBase(APIView):
     permission_classes = []
 
     def get(self, format=None):
-        self.query_params = self.request.query_params
+        self.query_params = decrypt(self.request.query_params.get("data", ''))
         self.data = dict()
 
-        self.on_get()
+        app_token = self.query_params.get('app_token', '')
 
-        return Response(self.data)
+        if APP_TOKEN == app_token:
+            self.on_get()
+        else:
+            self.data = {'success': False}
+
+        st = json.dumps(self.data)
+
+        return Response({'data': encrypt(st)})
 
     def on_get(self):
         pass
 
-    def read_private(self, key):
-        """Читает приватный ключ"""
-        private_key = serialization.load_pem_private_key(
-            key,
-            password=None,
-            backend=default_backend()
-        )
-        return private_key
+    def post(self, format=None):
+        self.query_params = decrypt(self.request.query_params.get("data", ''))
+        self.data = dict()
 
-    def decrypt(self, data):
-        """Дешифрует сообщение, закодированное публичным ключом"""
-        private_key = self.read_private(self.request.session['private_key'])  # self.read_private(bytes(self.request.session['private_key'], encoding="utf-8"))
+        self.on_post()
 
-        if not private_key:
-            return ''
+        st = json.dumps(self.data)
 
-        decrypted = private_key.decrypt(
-            data,
-            padding.OAEP(
-                mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None
-            )
-        )
-        return decrypted
+        return Response({'data': encrypt(st)})
 
-    def get_coder(self):
-        key = self.request.session['sync_key']
-        if key:
-            return Fernet(bytes(key))
-        else:
-            return None
+    def on_post(self):
+        pass
 
 
 class CreateUserAPI(APIViewBase):
     def on_get(self):
         user = None
 
-        # try:
-        phone = self.query_params['phone']
-        first_name = self.query_params['first_name']
-        last_name = self.query_params['last_name']
-        patronymic = self.query_params['patronymic']
+        try:
+            phone = self.query_params['phone']
+            first_name = self.query_params['first_name']
+            last_name = self.query_params['last_name']
+            patronymic = self.query_params['patronymic']
 
-        user = User.objects.create(
-            phone_number=phone,
-            first_name=first_name,
-            last_name=last_name,
-            patronymic=patronymic,
-        )
+            user = User.objects.create(
+                phone_number=phone,
+                first_name=first_name,
+                last_name=last_name,
+                patronymic=patronymic,
+            )
 
-        success = True
+            success = True
 
-    # except:
-    #     success = False
+        except:
+            success = False
 
-
-''' self.data = {
-     'user_id': user.id if user else -1,
-     'success': success
- }'''
-
-
-class InitSessionAPI(APIViewBase):
-    def on_get(self):
-        private_key, public_key = generate_keys()
-        self.request.session['private_key'] = private_key.decode("utf-8")
 
         self.data = {
-            'public_key': public_key.decode("utf-8"),
+            'user_id': user.id if user else -1,
+            'success': success
+        }
+
+
+class GetUserQRTokenAPI(APIViewBase):
+    def on_post(self):
+        try:
+            success = True
+
+            token = self.query_params.get('token', '')
+
+            user = user_by_token(token)
+
+            qr_token = user.qr_token
+        except:
+            qr_token = ''
+            success = False
+
+        self.data = {
+            'qr_token': qr_token,
+            'success': success
         }
 
 
 class TryAuthenticationAPI(APIViewBase):
-    def on_get(self):
-
-        # try:
-        key = self.decrypt(self.query_params.get('key', ''))
-        if not key:
-            raise Exception("ключ")
-        self.request.session['sync_key'] = key
-
-        phone = self.query_params.get('phone', '')
-
-        print(phone, key)
-        if not phone:
-            raise Exception("телефон")
+    def on_post(self):
         try:
-            phone = self.get_coder().decrypt(phone)
-        except Exception as e:
-            print(e)
+            success = True
+            phone = self.query_params.get('phone', '')
 
-        user = get_object_or_404(User, phone_number=phone)
+            user = get_object_or_404(User, phone_number=phone)
 
-        if user:
-            user.regenerate_passcode()
-            user_founded = True
-        else:
-            user = User.objects.create(phone_number=phone, first_name='Имя', last_name='Фамилия', patronymic='Отчество')
-            user.regenerate_passcode()
-            user_founded = False
-        err = ""
-        # except Exception as e:
-        #    err = str(e)
-        #   user_founded = False
-        #   success = False
+            if user:
+                # нашли, входим
+                user.regenerate_passcode()
+                user_founded = True
+            else:
+                # не нашли, регистрируем
+                user = User.objects.create(phone_number=phone, first_name='Имя', last_name='Фамилия', patronymic='Отчество')
+                user.regenerate_passcode()
+                user_founded = False
+
+        except:
+          user_founded = False
+          success = False
 
         self.data = {
-            'err': err,
             'user_founded': user_founded,
-            # 'success': success,
+            'success': success,
         }
 
 
-class InitAuthenticationKeyAPI(APIViewBase):
+class InitAuthenticationAPI(APIViewBase):
     def on_get(self):
-        phone = self.query_params.get('phone', '')
-        passcode = self.query_params.get('passcode', -1)
-
-        '''try:'''
-        user = get_object_or_404(User, phone_number=phone)
-
-        if user and user.compare_passcode(passcode):
-            # token = user.regenerate_token()
-            user.reset_passcode()
-            private_key, public_key = generate_keys()
-
-            self.request.session['private_key'] = private_key
-
+        try:
             success = True
-        else:
-            # token = ''
+
+            phone = self.query_params.get('phone', '-1')
+
+            user = get_object_or_404(User, phone_number=phone)
+
+            user.regenerate_passcode()
+
+        except:
             success = False
 
-    '''except:
-        self.request.session['private_key'] = public_key = ''
-        success = False
-
-    self.data = {
-        'public_key': public_key,
-        'success': success
-    }'''
+        self.data = {
+            'success': success,
+        }
 
 
 class AuthenticateUserAPI(APIViewBase):
     def on_get(self):
-        key = self.query_params.get('key', '')
+        phone = self.query_params.get('phone', '')
+        passcode = self.query_params.get('passcode', -1)
 
-        '''try:'''
-        data = self.decrypt(key)
+        try:
+            user = get_object_or_404(User, phone_number=phone)
 
-        self.request.session['private_user_key'] = data
+            if user and user.compare_passcode(passcode):
+                token = user.regenerate_token()
+                user.reset_passcode()
 
-        success = True
+                success = True
+            else:
+                token = ''
+                success = False
 
-    '''except:
-        success = False
+        except:
+            success = False
 
-    self.data = {
-        'success': success
-    }'''
+        self.data = {
+            'token': token,
+            'success': success
+        }
 
 
 class UserInfoAPI(APIViewBase):
     def on_get(self):
         info = dict()
 
-        # try:
-        success = True
-        user = user_by_token(self.query_params['token'])
+        try:
+            success = True
+            user = user_by_token(self.query_params['token'])
 
-        if not user:
-            raise Exception()
+            if not user:
+                raise Exception()
 
-        info['id'] = user.id
-        info['first_name'] = user.first_name
-        info['last_name'] = user.last_name
-        info['patronymic'] = user.patronymic
-        info['coins'] = user.coins
+            info['id'] = user.id
+            info['first_name'] = user.first_name
+            info['last_name'] = user.last_name
+            info['patronymic'] = user.patronymic
+            info['coins'] = user.coins
 
-    '''except:
-        success = False
+        except:
+            success = False
 
-    self.data = {
-        'info': info,
-        'success': success
-    }'''
+        self.data = {
+            'info': info,
+            'success': success
+        }
 
 
 class UserGarbageInfoAPI(APIViewBase):
     def on_get(self):
         info = dict()
 
-        # try:
-        success = True
-        user = user_by_token(self.query_params['token'])
+        try:
+            success = True
+            user = user_by_token(self.query_params['token'])
 
-        if not user:
-            raise Exception()
+            if not user:
+                raise Exception()
 
-        info['cardboard'] = user.garb_cardboard
-        info['wastepaper'] = user.garb_wastepaper
-        info['glass'] = user.garb_glass
-        info['plastic_lid'] = user.garb_plastic_lid
-        info['aluminum_can'] = user.garb_aluminum_can
-        info['plastic_bottle'] = user.garb_plastic_bottle
-        info['plastic_mk2'] = user.garb_plastic_mk2
-        info['plastic_mk5'] = user.garb_plastic_mk5
+            info['cardboard'] = user.garb_cardboard
+            info['wastepaper'] = user.garb_wastepaper
+            info['glass'] = user.garb_glass
+            info['plastic_lid'] = user.garb_plastic_lid
+            info['aluminum_can'] = user.garb_aluminum_can
+            info['plastic_bottle'] = user.garb_plastic_bottle
+            info['plastic_mk2'] = user.garb_plastic_mk2
+            info['plastic_mk5'] = user.garb_plastic_mk5
+
+        except:
+             success = False
+
+        self.data = {
+            'info': info,
+            'success': success
+        }
 
 
-'''except:
-     success = False
+class CollectionPlacesInfoAPI(APIViewBase):
+    def on_get(self):
+        places = CollectionPlace.objects.all()
 
- self.data = {
-     'info': info,
-     'success': success
- }'''
+        data = {}
+        i = 0
+        for place in places:
+            data[i] = {
+                "address": place.address,
+                "snippet": place.snippet,
+                "latitude": place.latitude,
+                "longitude": place.longitude,
+            }
+            i += 1
+
+        self.data = data
+
+
+class MarketsInfoAPI(APIViewBase):
+    def on_get(self):
+        markets = Market.objects.all()
+
+        data = {}
+        i = 0
+        for place in markets:
+            data[i] = {
+                "address": place.address,
+                "snippet": place.snippet,
+                "latitude": place.latitude,
+                "longitude": place.longitude,
+            }
+            i += 1
+
+        self.data = data
+
+
+class MarketItemsInfoAPI(APIViewBase):
+    def on_get(self):
+        market_items = MarketItem.objects.all()
+
+        data = {}
+        i = 0
+        for item in market_items:
+            data[i] = {
+                "id": item.id,
+                "icon_link": item.icon_link,
+                "name": item.name,
+                "cost": item.cost,
+            }
+            i += 1
+
+        self.data = data
+
+
+class MarketItemInfoAPI(APIViewBase):
+    def on_get(self):
+        try:
+            success = True
+            id = self.query_params.get('id', '')
+
+            item = MarketItem.objects.get(id=id)
+
+            info = {
+                'icon_link': item.icon_link,
+                'name': item.name,
+                'description': item.description,
+                'cost': item.cost,
+                'available': item.available,
+            }
+        except:
+            success = False
+            info = {}
+
+            self.data = {
+                'info': info,
+                'success': success
+            }

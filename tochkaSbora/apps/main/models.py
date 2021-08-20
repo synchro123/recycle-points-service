@@ -16,6 +16,7 @@ class User(models.Model):
     patronymic = models.CharField(max_length=100, verbose_name='Отчество')
     passcode = models.CharField(max_length=6, verbose_name='Код подтверждения')
     token = models.CharField(max_length=50, verbose_name='Ключ доступа')
+    qr_token = models.CharField(max_length=50, verbose_name='QR Ключ доступа')
     coins = models.IntegerField(default=0, verbose_name='Монеты')
 
     # сданный мусор (x50 гр.)
@@ -46,13 +47,41 @@ class User(models.Model):
         self.save()
         return token
 
+    def regenerate_qr_token(self):
+        chars = 'qwertyuiopasdfghjklzxcvbnm1234567890'
+        token = ''.join(map(str, random.sample(list(chars), len(chars)))) + str(self.id)
+        self.qr_token = token
+        self.save()
+        return token
+
 
 def user_by_token(token):
     return get_object_or_404(User, token=token)
 
+def user_by_qr_token(token):
+    return get_object_or_404(User, qr_token=token)
+
 
 class CollectionPlace(models.Model):
-    pass
+    class Meta:
+        verbose_name = 'Место сбора мусора'
+        verbose_name_plural = 'Места сбора мусора'
+
+    address = models.CharField(default='', max_length=100, verbose_name="Адрес")
+    snippet = models.CharField(default='', max_length=50, verbose_name="Режим работы")
+    latitude = models.FloatField(default=0, verbose_name="Широта")
+    longitude = models.FloatField(default=0, verbose_name="Долгота")
+
+
+class Market(models.Model):
+    class Meta:
+        verbose_name = 'Магазин'
+        verbose_name_plural = 'Магазины'
+
+    address = models.CharField(default='', max_length=100, verbose_name="Адрес")
+    snippet = models.CharField(default='', max_length=50, verbose_name="Режим работы")
+    latitude = models.FloatField(default=0, verbose_name="Широта")
+    longitude = models.FloatField(default=0, verbose_name="Долгота")
 
 
 class MarketItem(models.Model):
@@ -64,3 +93,5 @@ class MarketItem(models.Model):
     name = models.CharField(max_length=50, verbose_name='Название')
     description = models.TextField(verbose_name='Описание')
     cost = models.IntegerField(verbose_name='Стоимость')
+
+    available = models.BooleanField(default=True, verbose_name='Доступность')

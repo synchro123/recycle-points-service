@@ -1,5 +1,5 @@
 from django.shortcuts import get_object_or_404
-from .models import User, user_by_token
+from .models import User, user_by_qr_token
 from .views import APIViewBase
 
 from rest_framework.views import APIView
@@ -14,7 +14,7 @@ class UserAddGarbageAPIBase(APIViewBase):
             token = self.query_params['token']
             value = int(self.query_params['value'])
 
-            user = user_by_token(token)
+            user = user_by_qr_token(token)
 
             if user:
                 self.operate(user, value)
@@ -81,7 +81,7 @@ class UserAddCoinsAPI(APIViewBase):
             token = self.query_params['token']
             value = int(self.query_params['value'])
 
-            user = user_by_token(token)
+            user = user_by_qr_token(token)
 
             if user:
                 user.coins += value
