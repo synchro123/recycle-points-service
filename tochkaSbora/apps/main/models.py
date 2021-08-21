@@ -30,10 +30,10 @@ class User(models.Model):
     garb_plastic_mk5 = models.IntegerField(default=0, verbose_name='Пластика маркировки «5» (x50 гр.)')
 
     def compare_passcode(self, passcode):
-        return len(self.passcode) == 6 and self.passcode == passcode
+        return len(self.passcode) == 4 and self.passcode == passcode
 
     def regenerate_passcode(self):
-        self.passcode = ''.join(map(str, random.sample(range(10), 6)))
+        self.passcode = '1986' #''.join(map(str, random.sample(range(10), 4)))
         self.save()
 
     def reset_passcode(self):

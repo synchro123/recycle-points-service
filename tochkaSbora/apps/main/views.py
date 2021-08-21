@@ -13,6 +13,9 @@ import base64
 import hashlib
 from Crypto.Cipher import AES
 from Crypto import Random
+import os
+from urllib.parse import unquote
+
 
 APP_TOKEN = 'PX6eUmgv4th7GKqhqDr8E5AZt8SFi2Ja'
 
@@ -49,7 +52,7 @@ class APIViewBase(APIView):
     permission_classes = []
 
     def get(self, format=None):
-        self.query_params = decrypt(self.request.query_params.get("data", ''))
+        self.query_params = self.request.query_params #decrypt(unquote(self.request.query_params.get("data", '')))
         self.data = dict()
 
         app_token = self.query_params.get('app_token', '')
@@ -61,20 +64,20 @@ class APIViewBase(APIView):
 
         st = json.dumps(self.data)
 
-        return Response({'data': encrypt(st)})
+        return Response(self.data) #{'data': encrypt(st)})
 
     def on_get(self):
         pass
 
     def post(self, format=None):
-        self.query_params = decrypt(self.request.query_params.get("data", ''))
+        self.query_params = self.request.query_params # decrypt(unquote(self.request.query_params.get("data", '')))
         self.data = dict()
 
         self.on_post()
 
         st = json.dumps(self.data)
 
-        return Response({'data': encrypt(st)})
+        return Response(self.data) #{'data': encrypt(st)})
 
     def on_post(self):
         pass
@@ -90,12 +93,13 @@ class CreateUserAPI(APIViewBase):
             last_name = self.query_params['last_name']
             patronymic = self.query_params['patronymic']
 
-            user = User.objects.create(
+            user = User.objects.get(
                 phone_number=phone,
-                first_name=first_name,
-                last_name=last_name,
-                patronymic=patronymic,
             )
+            user.first_name = first_name
+            user.last_name = last_name
+            user.patronymic = patronymic
+            user.save()
 
             success = True
 
@@ -110,7 +114,7 @@ class CreateUserAPI(APIViewBase):
 
 
 class GetUserQRTokenAPI(APIViewBase):
-    def on_post(self):
+    def on_get(self):
         try:
             success = True
 
@@ -130,26 +134,26 @@ class GetUserQRTokenAPI(APIViewBase):
 
 
 class TryAuthenticationAPI(APIViewBase):
-    def on_post(self):
+    def on_get(self):
         try:
             success = True
             phone = self.query_params.get('phone', '')
 
-            user = get_object_or_404(User, phone_number=phone)
 
-            if user:
-                # нашли, входим
-                user.regenerate_passcode()
+            try:
+                user = get_object_or_404(User, phone_number=phone)
                 user_founded = True
-            else:
+            except:
                 # не нашли, регистрируем
                 user = User.objects.create(phone_number=phone, first_name='Имя', last_name='Фамилия', patronymic='Отчество')
-                user.regenerate_passcode()
                 user_founded = False
+            user.regenerate_passcode()
 
         except:
           user_founded = False
           success = False
+
+        self.request.session['user_founded'] = user_founded
 
         self.data = {
             'user_founded': user_founded,
@@ -172,6 +176,7 @@ class InitAuthenticationAPI(APIViewBase):
             success = False
 
         self.data = {
+            'user_founded': self.request.session.get('user_founded', True),
             'success': success,
         }
 
@@ -261,54 +266,54 @@ class CollectionPlacesInfoAPI(APIViewBase):
     def on_get(self):
         places = CollectionPlace.objects.all()
 
-        data = {}
+        data = []
         i = 0
         for place in places:
-            data[i] = {
+            data.append({
                 "address": place.address,
                 "snippet": place.snippet,
                 "latitude": place.latitude,
                 "longitude": place.longitude,
-            }
+            })
             i += 1
 
-        self.data = data
+        self.data['info'] = data
 
 
 class MarketsInfoAPI(APIViewBase):
     def on_get(self):
         markets = Market.objects.all()
 
-        data = {}
+        data = []
         i = 0
         for place in markets:
-            data[i] = {
+            data.append({
                 "address": place.address,
                 "snippet": place.snippet,
                 "latitude": place.latitude,
                 "longitude": place.longitude,
-            }
+            })
             i += 1
 
-        self.data = data
+        self.data['info'] = data
 
 
 class MarketItemsInfoAPI(APIViewBase):
     def on_get(self):
         market_items = MarketItem.objects.all()
 
-        data = {}
+        data = []
         i = 0
         for item in market_items:
-            data[i] = {
+            data.append({
                 "id": item.id,
                 "icon_link": item.icon_link,
                 "name": item.name,
                 "cost": item.cost,
-            }
+            })
             i += 1
 
-        self.data = data
+        self.data['info'] = data
 
 
 class MarketItemInfoAPI(APIViewBase):
@@ -330,7 +335,7 @@ class MarketItemInfoAPI(APIViewBase):
             success = False
             info = {}
 
-            self.data = {
-                'info': info,
-                'success': success
-            }
+        self.data = {
+            'info': info,
+            'success': success
+        }
